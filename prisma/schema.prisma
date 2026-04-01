@@ -1,0 +1,568 @@
+// BizArabic Platform - Complete Business Setup Solution for Arab Countries
+// Multi-module SaaS platform with comprehensive user management and business workflows
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== USER SYSTEM ====================
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  name              String
+  phone             String?
+  avatar            String?
+  role              UserRole @default(FOUNDER)
+  emailVerified     DateTime?
+  otpCode           String?
+  otpExpires        DateTime?
+  isKycVerified     Boolean  @default(false)
+  kycDocumentUrl    String?
+  kycStatus         KycStatus @default(PENDING)
+  passwordHash      String?
+  googleId          String?  @unique
+  subscriptionPlan  String?  @default("FREE")
+  subscriptionEnds  DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  companies         Company[] @relation("OwnerCompanies")
+  applications      BusinessApplication[]
+  documents         UserDocument[]
+  payments          Payment[]
+  sentMessages      Message[] @relation("SentMessages")
+  receivedMessages  Message[] @relation("ReceivedMessages")
+  notifications     Notification[]
+  consultantProfile ConsultantProfile?
+  adminActions      AdminAction[]
+  aiConversations   AiConversation[]
+  leads             Lead[]
+  assignedCompanies Company[] @relation("ConsultantAssignedCompanies")
+
+  @@map("users")
+}
+
+enum UserRole {
+  FOUNDER
+  CONSULTANT
+  ADMIN
+}
+
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ==================== COMPANY MANAGEMENT ====================
+
+model Company {
+  id                String   @id @default(cuid())
+  name              String
+  tradeName         String?
+  legalForm         String
+  country           Country  // UAE, SAUDI, QATAR, OMAN, BAHRAIN
+  businessType      BusinessType // FREE_ZONE, MAINLAND, OFFSHORE
+  industry          String
+  description       String?
+  targetCountry     Country?
+  estimatedBudget   Float?
+  preferredCurrency String   @default("AED")
+  status             CompanyStatus @default(DRAFT)
+  ownerId           String
+  assignedConsultantId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  owner             User       @relation("OwnerCompanies", fields: [ownerId], references: [id])
+  assignedConsultant User?     @relation("ConsultantAssignedCompanies", fields: [assignedConsultantId], references: [id])
+  applications      BusinessApplication[]
+  costCalculations  CostCalculation[]
+  complianceItems   ComplianceItem[]
+  documents         UserDocument[]
+  leads             Lead[]
+
+  @@map("companies")
+}
+
+enum Country {
+  UAE
+  SAUDI
+  QATAR
+  OMAN
+  BAHRAIN
+}
+
+enum BusinessType {
+  FREE_ZONE
+  MAINLAND
+  OFFSHORE
+}
+
+enum CompanyStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  ACTIVE
+  SUSPENDED
+}
+
+// ==================== COST CALCULATION ENGINE ====================
+
+model CostCalculation {
+  id               String   @id @default(cuid())
+  companyId        String
+  country          Country
+  businessType     BusinessType
+  licenseFee       Float
+  visaFee          Float?
+  officeFee        Float?
+  agentFee         Float?
+  governmentFees   Float
+  totalCost        Float
+  currency         String   @default("AED")
+  breakdown        Json?    // Detailed cost breakdown
+  validUntil       DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  company          Company  @relation(fields: [companyId], references: [id])
+
+  @@map("cost_calculations")
+}
+
+// ==================== AI BUSINESS ADVISOR ====================
+
+model AiConversation {
+  id           String   @id @default(cuid())
+  userId       String
+  title        String?
+  context      Json?    // Conversation context and user preferences
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user         User     @relation(fields: [userId], references: [id])
+  messages     AiMessage[]
+
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String   // "user" or "assistant"
+  content        String
+  metadata       Json?    // Links, suggestions, follow-up questions
+  createdAt      DateTime @default(now())
+
+  // Relations
+  conversation   AiConversation @relation(fields: [conversationId], references: [id])
+
+  @@map("ai_messages")
+}
+
+// ==================== DOCUMENT MANAGEMENT ====================
+
+model UserDocument {
+  id           String        @id @default(cuid())
+  userId       String
+  companyId    String?
+  documentType DocumentType
+  fileName     String
+  fileUrl      String
+  fileSize     Int
+  mimeType     String
+  status       DocumentStatus @default(UPLOADED)
+  verificationNotes String?
+  uploadedAt   DateTime      @default(now())
+  verifiedAt   DateTime?
+  verifiedBy   String?       // Admin ID
+
+  // Relations
+  user         User          @relation(fields: [userId], references: [id])
+  company      Company?      @relation(fields: [companyId], references: [id])
+
+  @@map("user_documents")
+}
+
+enum DocumentType {
+  PASSPORT
+  VISA
+  ADDRESS_PROOF
+  BANK_STATEMENT
+  PHOTOGRAPH
+  BUSINESS_PLAN
+  CV
+  CERTIFICATE
+  OTHER
+}
+
+enum DocumentStatus {
+  UPLOADED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+// ==================== BUSINESS APPLICATION WORKFLOW ====================
+
+model BusinessApplication {
+  id           String   @id @default(cuid())
+  companyId    String
+  userId       String
+  applicationNumber String @unique
+  currentStep  Int      @default(1)
+  totalSteps   Int      @default(6)
+  status       ApplicationStatus @default(DRAFT)
+  submittedAt  DateTime?
+  approvedAt   DateTime?
+  rejectedAt   DateTime?
+  rejectionReason String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  company      Company  @relation(fields: [companyId], references: [id])
+  user         User     @relation(fields: [userId], references: [id])
+  checklists   ApplicationChecklist[]
+  timeline     ApplicationTimeline[]
+  payments     Payment[]
+
+  @@map("business_applications")
+}
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  ADDITIONAL_INFO_REQUIRED
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+model ApplicationChecklist {
+  id             String   @id @default(cuid())
+  applicationId  String
+  step           Int
+  item           String
+  isCompleted    Boolean  @default(false)
+  completedAt    DateTime?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  application    BusinessApplication @relation(fields: [applicationId], references: [id])
+
+  @@map("application_checklists")
+}
+
+model ApplicationTimeline {
+  id             String   @id @default(cuid())
+  applicationId  String
+  event          String
+  description    String?
+  createdBy      String   // User ID
+  createdAt      DateTime @default(now())
+
+  // Relations
+  application    BusinessApplication @relation(fields: [applicationId], references: [id])
+
+  @@map("application_timeline")
+}
+
+// ==================== PARTNER/AGENT NETWORK ====================
+
+model ConsultantProfile {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  specialization      String   // Areas of expertise (JSON string)
+  experience          String   // Years of experience
+  bio                 String?
+  rating              Float?   @default(0)
+  reviewCount         Int      @default(0)
+  commissionRate      Float    @default(10) // Percentage
+  totalEarnings       Float    @default(0)
+  available           Boolean  @default(true)
+  languages           String   // Languages spoken (JSON string)
+  certifications      String   // Certifications (JSON string)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Relations
+  user                User     @relation(fields: [userId], references: [id])
+  leads               Lead[]
+  reviews             ConsultantReview[]
+
+  @@map("consultant_profiles")
+}
+
+model Lead {
+  id               String   @id @default(cuid())
+  consultantId     String
+  companyId        String?
+  userId           String
+  status           LeadStatus @default(ASSIGNED)
+  value            Float?
+  commissionAmount Float?
+  source           String?  // How the lead was generated
+  notes            String?
+  assignedAt       DateTime @default(now())
+  closedAt         DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  consultant       ConsultantProfile @relation(fields: [consultantId], references: [id])
+  company          Company?          @relation(fields: [companyId], references: [id])
+  user             User              @relation(fields: [userId], references: [id])
+
+  @@map("leads")
+}
+
+enum LeadStatus {
+  ASSIGNED
+  CONTACTED
+  IN_PROGRESS
+  CONVERTED
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+model ConsultantReview {
+  id           String   @id @default(cuid())
+  consultantId String
+  userId       String
+  rating       Int      // 1-5 stars
+  review       String?
+  createdAt    DateTime @default(now())
+
+  // Relations
+  consultant   ConsultantProfile @relation(fields: [consultantId], references: [id])
+
+  @@unique([consultantId, userId])
+  @@map("consultant_reviews")
+}
+
+// ==================== PAYMENT & BILLING ====================
+
+model Payment {
+  id             String   @id @default(cuid())
+  userId         String
+  applicationId  String?
+  invoiceNumber  String   @unique
+  amount         Float
+  currency       String   @default("AED")
+  status         PaymentStatus @default(PENDING)
+  paymentMethod  String?
+  transactionId  String?
+  description    String
+  dueDate        DateTime
+  paidAt         DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  user           User     @relation(fields: [userId], references: [id])
+  application    BusinessApplication? @relation(fields: [applicationId], references: [id])
+
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+model Subscription {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  plan         String   // FREE, BASIC, PRO, ENTERPRISE
+  amount       Float
+  currency     String   @default("AED")
+  status       SubscriptionStatus @default(ACTIVE)
+  startDate    DateTime
+  endDate      DateTime
+  autoRenew    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  SUSPENDED
+}
+
+// ==================== COMPLIANCE & ALERTS ====================
+
+model ComplianceItem {
+  id           String   @id @default(cuid())
+  companyId    String
+  title        String
+  description  String
+  type         ComplianceType
+  dueDate      DateTime
+  status       ComplianceStatus @default(PENDING)
+  priority     Priority @default(MEDIUM)
+  notes        String?
+  completedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  company      Company  @relation(fields: [companyId], references: [id])
+
+  @@map("compliance_items")
+}
+
+enum ComplianceType {
+  LICENSE_RENEWAL
+  VISA_RENEWAL
+  ANNUAL_AUDIT
+  TAX_FILING
+  OTHER
+}
+
+enum ComplianceStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  userId     String
+  title      String
+  message    String
+  type       NotificationType
+  isRead     Boolean  @default(false)
+  metadata   Json?    // Additional data
+  expiresAt  DateTime?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  SYSTEM
+  APPLICATION_UPDATE
+  PAYMENT_DUE
+  COMPLIANCE_REMINDER
+  MESSAGE
+  MARKETING
+}
+
+// ==================== COMMUNICATION SYSTEM ====================
+
+model Message {
+  id           String   @id @default(cuid())
+  senderId     String
+  receiverId   String
+  applicationId String?
+  content      String
+  fileUrl      String?
+  fileName     String?
+  isRead       Boolean  @default(false)
+  readAt       DateTime?
+  createdAt    DateTime @default(now())
+
+  // Relations
+  sender       User     @relation("SentMessages", fields: [senderId], references: [id])
+  receiver     User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+
+  @@map("messages")
+}
+
+// ==================== KNOWLEDGE HUB ====================
+
+model Article {
+  id           String   @id @default(cuid())
+  title        String
+  slug         String   @unique
+  content      String
+  excerpt      String?
+  featuredImage String?
+  author       String
+  country      Country?
+  category     String
+  tags         String   // Tags as JSON string
+  status       ArticleStatus @default(DRAFT)
+  seoTitle     String?
+  seoDescription String?
+  publishedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("articles")
+}
+
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// ==================== ADMIN PANEL ====================
+
+model AdminAction {
+  id           String   @id @default(cuid())
+  adminId      String
+  action       String
+  targetType   String   // user, company, application, etc.
+  targetId     String
+  details      Json?    // Action details
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  // Relations
+  admin        User     @relation(fields: [adminId], references: [id])
+
+  @@map("admin_actions")
+}
+
+// ==================== SYSTEM CONFIGURATION ====================
+
+model SystemConfig {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  value        Json
+  description  String?
+  updatedAt    DateTime @updatedAt
+
+  @@map("system_config")
+}
