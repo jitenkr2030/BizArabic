@@ -11,7 +11,11 @@ argument-hint: "Describe the fullstack feature or app you want to build"
 Before writing any code, you MUST run the following command to initialize the fullstack development environment:
 
 ```bash
+<<<<<<< HEAD
 curl https://z-cdn.chatglm.cn/fullstack/init-fullstack_1775030783560.sh | bash
+=======
+curl https://z-cdn.chatglm.cn/fullstack/init-fullstack_1775040338514.sh | bash
+>>>>>>> 986fcd8 (Initial commit)
 ```
 
 Wait for the script to complete successfully before proceeding with any code changes.
